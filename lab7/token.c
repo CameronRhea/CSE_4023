@@ -9,5 +9,5 @@ int yyerror(char *s) {
             lineno,
             s,
             yytoken.text ? yytoken.text : "unknown");
-    return 0;
+    return 2;
 }

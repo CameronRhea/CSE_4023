@@ -9,6 +9,7 @@
 
 int serial = 0;
 SymbolTable globalTable = NULL;
+int semantic_error = 0;
 
 struct tree *maketree(int rule, int nkids, ...) {
     struct tree *t = malloc(sizeof(struct tree));
@@ -218,7 +219,13 @@ void buildSymtab(struct tree *t)
                 varType = getType(t->kids[3]);
             }
 
-            insert(globalTable, name, varType);
+            if (lookup(globalTable, name)) {
+    			fprintf(stderr, "Semantic error: redeclared variable %s\n", name);
+    			semantic_error = 1;
+			}
+			else {
+    			insert(globalTable, name, varType);
+			}
         }
     }
 

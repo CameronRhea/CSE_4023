@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -g
 
-TARGET = k0main
+TARGET = k0
 
 SRCS = main.c tree.c symtab.c type.c k0gram.tab.c lex.yy.c token.c
 OBJS = $(SRCS:.c=.o)
