@@ -9,7 +9,13 @@
 
 int serial = 0;
 SymbolTable globalTable = NULL;
+SymbolTableEntry currentFunction = NULL;
 int semantic_error = 0;
+
+SymbolTableEntry lookupSymbol(SymbolTable st, char *name)
+{
+    return lookupEntry(st, name);
+}
 
 struct tree *maketree(int rule, int nkids, ...) {
     struct tree *t = malloc(sizeof(struct tree));
@@ -174,31 +180,134 @@ typeptr getType(struct tree *t)
 {
     if (!t) return null_typeptr;
 
+    // =========================
+    // LEAF
+    // =========================
     if (t->leaf) {
         switch (t->leaf->category) {
-            case INTEGERLITERAL:
-                return integer_typeptr;
 
-            case REALLITERAL:
-                return double_typeptr;
+            case INTEGERLITERAL: return integer_typeptr;
+            case REALLITERAL: return double_typeptr;
+            case BOOLEANLITERAL: return boolean_typeptr;
+            case CHARACTERLITERAL: return char_typeptr;
+            case STRINGLITERAL: return string_typeptr;
+            case NULLLITERAL: return null_typeptr;
 
-            case BOOLEANLITERAL:
-                return boolean_typeptr;
+            case IDENTIFIER: {
+                SymbolTableEntry e = lookupEntry(globalTable, t->leaf->text);
 
-            case CHARACTERLITERAL:
-                return char_typeptr;
+                if (!e) {
+                    semantic_error = 1;
+                    fprintf(stderr, "Undefined variable %s\n", t->leaf->text);
+                    return NULL;
+                }
 
-            case NULLLITERAL:
-                return null_typeptr;
-
-            default:
-                return NULL;
+                return e->type;
+            }
         }
     }
 
-    // basic arithmetic expressions
-    if (t->prodrule >= 12 && t->prodrule <= 15) {
-        return integer_typeptr;
+    typeptr left, right;
+
+    switch (t->prodrule) {
+
+        // =========================
+        // ARITHMETIC
+        // =========================
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+
+            left = getType(t->kids[0]);
+            right = getType(t->kids[2]);
+
+            if (!left || !right) return NULL;
+
+            if (left == null_typeptr || right == null_typeptr) {
+                semantic_error = 1;
+                fprintf(stderr, "Null used in arithmetic expression\n");
+                return NULL;
+            }
+
+            if (left == double_typeptr || right == double_typeptr)
+                return double_typeptr;
+
+            return integer_typeptr;
+
+        // =========================
+        // RELATIONAL
+        // =========================
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+            return boolean_typeptr;
+
+        // =========================
+        // FUNCTION CALL (FULL FIX)
+        // =========================
+        case 11: {
+
+    SymbolTableEntry f =
+        lookupEntry(globalTable, t->kids[0]->leaf->text);
+
+    if (!f) {
+        semantic_error = 1;
+        fprintf(stderr, "Undefined function %s\n",
+                t->kids[0]->leaf->text);
+        return NULL;
+    }
+
+    if (!f->params && !f->returnType) {
+        semantic_error = 1;
+        fprintf(stderr, "%s is not a function\n", f->s);
+        return NULL;
+    }
+
+    // =========================
+    // ARGUMENT CHECKING (NO NULLABLE LOGIC)
+    // =========================
+    struct tree *arg = t->kids[2];
+    struct param *param = f->params;
+
+    while (arg && param) {
+
+        typeptr argType = getType(arg);
+        typeptr paramType = param->type;
+
+        if (argType == null_typeptr) {
+            semantic_error = 1;
+            fprintf(stderr,
+                "Null passed to function %s\n",
+                f->s);
+        }
+
+        if (argType && paramType && argType != paramType) {
+            semantic_error = 1;
+            fprintf(stderr,
+                "Type mismatch in call to %s\n",
+                f->s);
+        }
+
+        // advance argument list
+        if (arg->prodrule == 20)
+            arg = arg->kids[0];
+        else
+            arg = NULL;
+
+        param = param->next;
+    }
+
+    if (arg || param) {
+        semantic_error = 1;
+        fprintf(stderr,
+            "Argument count mismatch in call to %s\n",
+            f->s);
+    }
+
+    return f->returnType ? f->returnType : integer_typeptr;
+}
     }
 
     return NULL;
@@ -208,27 +317,170 @@ void buildSymtab(struct tree *t)
 {
     if (!t) return;
 
-    if (t->prodrule == 5) {   // varDeclaration
-        if (t->nkids >= 2 && t->kids[1] && t->kids[1]->leaf) {
-            char *name = t->kids[1]->leaf->text;
+    // =========================
+    // VAR DECL
+    // =========================
+    if (t->prodrule == 5) {
 
-            typeptr varType = NULL;
+        char *name = t->kids[1]->leaf->text;
+        typeptr varType = integer_typeptr;
+        int isNullable = 0;
 
-            // if declaration has assignment
-            if (t->nkids == 4) {
-                varType = getType(t->kids[3]);
+        if (t->nkids == 4) {
+            typeptr rhs = getType(t->kids[3]);
+
+            if (rhs == null_typeptr) {
+                isNullable = 1;
+            } else {
+                varType = rhs;
             }
+        }
 
-            if (lookup(globalTable, name)) {
-    			fprintf(stderr, "Semantic error: redeclared variable %s\n", name);
-    			semantic_error = 1;
-			}
-			else {
-    			insert(globalTable, name, varType);
-			}
+        if (lookup(globalTable, name)) {
+            semantic_error = 1;
+            fprintf(stderr, "Redeclared variable %s\n", name);
+        } else {
+            insert(globalTable, name, varType);
+
+            SymbolTableEntry e = lookupEntry(globalTable, name);
+            e->mutable = 1;
+            e->nullable = isNullable;
         }
     }
 
+    // =========================
+    // ASSIGNMENT
+    // =========================
+    else if (t->prodrule == 6) {
+
+        char *name = t->kids[0]->leaf->text;
+        SymbolTableEntry e = lookupEntry(globalTable, name);
+
+        if (!e) {
+            semantic_error = 1;
+            fprintf(stderr, "Undefined variable %s\n", name);
+        } else {
+
+            if (!e->mutable) {
+                semantic_error = 1;
+                fprintf(stderr, "Immutable assignment %s\n", name);
+            }
+
+            typeptr rhs = getType(t->kids[2]);
+
+            if (rhs == null_typeptr && !e->nullable) {
+                semantic_error = 1;
+                fprintf(stderr, "Null assigned to non-nullable %s\n", name);
+            }
+
+            if (rhs && e->type && rhs != e->type &&
+                !(rhs == null_typeptr && e->nullable)) {
+                semantic_error = 1;
+                fprintf(stderr, "Type mismatch assignment %s\n", name);
+            }
+        }
+    }
+
+    // =========================
+    // FUNCTION DECL
+    // =========================
+    else if (t->prodrule == 7) {
+
+        char *fname = t->kids[1]->leaf->text;
+
+        if (lookup(globalTable, fname)) {
+            semantic_error = 1;
+            fprintf(stderr, "Redeclared function %s\n", fname);
+            return;
+        }
+
+        SymbolTableEntry f = malloc(sizeof(*f));
+
+        f->s = strdup(fname);
+        f->type = alctype(FUNC_TYPE);
+        f->mutable = 0;
+        f->nullable = 0;
+        f->next = globalTable->next;
+
+        f->params = NULL;
+        f->returnType = integer_typeptr;
+
+        currentFunction = f;
+
+        // =========================
+        // PARAMETERS
+        // =========================
+        struct tree *p = t->kids[3];
+
+        struct param *head = NULL;
+        struct param *tail = NULL;
+
+        if (p && p->prodrule == 8) {
+
+            struct tree *curr = p;
+
+            while (curr) {
+
+                struct param *np = malloc(sizeof(struct param));
+
+                if (curr->nkids == 3) {
+                    np->name = strdup(curr->kids[2]->leaf->text);
+                    curr = curr->kids[0];
+                } else {
+                    np->name = strdup(curr->kids[0]->leaf->text);
+                    curr = NULL;
+                }
+
+                np->type = integer_typeptr;
+                np->next = NULL;
+
+                if (!head) head = tail = np;
+                else {
+                    tail->next = np;
+                    tail = np;
+                }
+            }
+        }
+
+        f->params = head;
+
+        insert(globalTable, fname, f->type);
+
+        SymbolTableEntry e = lookupEntry(globalTable, fname);
+        e->params = head;
+        e->returnType = f->returnType;
+    }
+
+    // =========================
+    // RETURN STATEMENT (FIXED)
+    // =========================
+    else if (t->prodrule == 4) {
+
+    if (!currentFunction) return;
+
+    typeptr retType = getType(t->kids[1]);
+
+    if (retType == null_typeptr) {
+        semantic_error = 1;
+        fprintf(stderr,
+            "Null returned from function %s\n",
+            currentFunction->s);
+    }
+
+    if (retType &&
+        currentFunction->returnType &&
+        retType != currentFunction->returnType) {
+
+        semantic_error = 1;
+        fprintf(stderr,
+            "Return type mismatch in %s\n",
+            currentFunction->s);
+    }
+}
+
+    // =========================
+    // RECURSION
+    // =========================
     for (int i = 0; i < t->nkids; i++) {
         buildSymtab(t->kids[i]);
     }

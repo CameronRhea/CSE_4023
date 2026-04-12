@@ -10,7 +10,9 @@ struct typeinfo integer_type = { INT_TYPE };
 struct typeinfo double_type = { DOUBLE_TYPE };
 struct typeinfo boolean_type = { BOOL_TYPE };
 struct typeinfo char_type = { CHAR_TYPE };
+struct typeinfo string_type = { STRING_TYPE };
 
+typeptr string_typeptr = &string_type;
 typeptr null_typeptr = &null_type;
 typeptr integer_typeptr = &integer_type;
 typeptr double_typeptr = &double_type;
