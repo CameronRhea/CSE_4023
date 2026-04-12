@@ -234,6 +234,10 @@ expression:
       {
           $$ = makeleaf($1);
       }
+    | CHARACTERLITERAL
+      {
+      	  $$ = makeleaf($1);
+      }
     | LPAREN expression RPAREN
       {
           $$ = $2;

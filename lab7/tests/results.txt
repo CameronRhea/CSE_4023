@@ -1,0 +1,110 @@
+===== VALID K0 TESTS =====
+Running k0/lex1.kt
+k0/lex1.kt
+No errors
+
+Running k0/lex2.kt
+k0/lex2.kt
+No errors
+
+Running k0/lex3.kt
+k0/lex3.kt
+No errors
+
+Running k0/lex4.kt
+k0/lex4.kt
+No errors
+
+Running k0/syn1.kt
+k0/syn1.kt
+No errors
+
+Running k0/syn2.kt
+k0/syn2.kt
+No errors
+
+Running k0/syn3.kt
+k0/syn3.kt
+No errors
+
+Running k0/syn4.kt
+k0/syn4.kt
+No errors
+
+Running k0/syn7.kt
+k0/syn7.kt
+No errors
+
+===== ERROR TESTS =====
+Running errors/lex1.kt
+errors/lex1.kt
+Illegal character '@' at line 1
+
+Running errors/lex2.kt
+errors/lex2.kt
+Unterminated comment at line 2
+
+Running errors/lex3.kt
+errors/lex3.kt
+Illegal character '@' at line 1
+
+Running errors/sem1.kt
+Semantic error: redeclared variable x
+Semantic error(s) found
+errors/sem1.kt
+
+Running errors/sem2.kt
+Semantic error: redeclared variable count
+Semantic error(s) found
+errors/sem2.kt
+
+Running errors/sem3.kt
+Semantic error: redeclared variable a
+Semantic error(s) found
+errors/sem3.kt
+
+Running errors/syn1.kt
+errors/syn1.kt:1: syntax error: syntax error at '='
+errors/syn1.kt
+
+Running errors/syn2.kt
+errors/syn2.kt:1: syntax error: syntax error at '5'
+errors/syn2.kt
+
+Running errors/syn3.kt
+errors/syn3.kt:2: syntax error: syntax error at ';'
+errors/syn3.kt
+
+Running errors/syn4.kt
+errors/syn4.kt:1: syntax error: syntax error at ';'
+errors/syn4.kt
+
+Running errors/syn5.kt
+errors/syn5.kt:1: syntax error: syntax error at '{'
+errors/syn5.kt
+
+Running errors/syn6.kt
+errors/syn6.kt:1: syntax error: syntax error at 'if'
+errors/syn6.kt
+
+===== KOTLIN-NOT-K0 TESTS =====
+Running kotlin/syn1.kt
+kotlin/syn1.kt:1: syntax error: syntax error at ':'
+kotlin/syn1.kt
+
+Running kotlin/syn2.kt
+kotlin/syn2.kt:1: syntax error: syntax error at '('
+kotlin/syn2.kt
+
+Running kotlin/syn3.kt
+kotlin/syn3.kt:1: syntax error: syntax error at 'Person'
+kotlin/syn3.kt
+
+Running kotlin/syn4.kt
+kotlin/syn4.kt:1: syntax error: syntax error at ':'
+kotlin/syn4.kt
+
+Running kotlin/syn5.kt
+kotlin/syn5.kt:1: syntax error: syntax error at 'Person'
+kotlin/syn5.kt
+

@@ -1,0 +1,5 @@
+if (true) {
+    var x = 5;
+} else {
+    var y = 10;
+}

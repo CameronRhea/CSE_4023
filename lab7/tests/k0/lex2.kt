@@ -1,0 +1,8 @@
+// single line comment
+
+/* multi
+   line
+   comment */
+
+var x = 10;
+var y = (x + 2);
