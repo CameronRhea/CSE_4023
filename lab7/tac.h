@@ -62,7 +62,7 @@ struct instr *append(struct instr *, struct instr *);
 char *regionname(int i);
 char *opcodename(int i);
 char *pseudoname(int i);
-struct addr *genlabel();
+struct addr genlabel(void);
 void tacprint(struct instr *head);
 
 #endif

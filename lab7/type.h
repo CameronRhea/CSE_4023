@@ -1,7 +1,7 @@
 #ifndef TYPE_H
 #define TYPE_H
-
 #include "tree.h"
+
 typedef struct param {
    char *name;
    struct typeinfo *type;

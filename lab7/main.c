@@ -55,6 +55,10 @@ int main(int argc, char *argv[])
         globalTable = mksymtab();
         insert(globalTable, "print", alctype(FUNC_TYPE));
         buildSymtab(root);
+        assign_first(root);
+        root->follow = genlabel();   //start with an exit label
+    	assign_follow(root);
+    	assign_bool(root);
 
         if (semantic_error) {
             fprintf(stderr, "Semantic error(s) found\n");

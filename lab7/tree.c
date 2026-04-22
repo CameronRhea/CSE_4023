@@ -29,6 +29,11 @@ struct tree *maketree(int rule, int nkids, ...) {
     t->nkids = nkids;
     t->leaf = NULL;
     t->id = serial++;
+    t->first.region = R_NONE;
+	t->follow.region = R_NONE;
+	t->onTrue.region = R_NONE;
+	t->onFalse.region = R_NONE;
+    t->hasFirst = t->hasFollow = t->hasTrue = t->hasFalse = 0;
 
     for (int i = 0; i < 9; i++) {
         t->kids[i] = NULL;
@@ -53,6 +58,10 @@ struct tree *makeleaf(struct token *tok) {
     t->nkids = 0;
     t->leaf = tok;
     t->id = serial++;
+    t->first.region = R_NONE;
+	t->follow.region = R_NONE;
+	t->onTrue.region = R_NONE;
+	t->onFalse.region = R_NONE;
     return t;
 }
 
@@ -484,4 +493,119 @@ void buildSymtab(struct tree *t)
     for (int i = 0; i < t->nkids; i++) {
         buildSymtab(t->kids[i]);
     }
+}
+
+int labelCounter = 0;
+
+struct addr genlabel()
+{
+    struct addr a;
+    a.region = R_LABEL;
+    a.u.offset = labelCounter++;
+    return a;
+}
+
+void assign_first(struct tree *t)
+{
+    if (!t) return;
+
+    for (int i = 0; i < t->nkids; i++)
+        assign_first(t->kids[i]);
+
+    switch (t->prodrule) {
+
+        case 10: // while
+        case 2:  // varDecl stmt
+        case 3:  // assignment stmt
+        case 4:  // return
+            t->first = genlabel();
+            break;
+    }
+    
+    if (t->first.region != R_NONE) {
+    	printf("Node %d assigned FIRST label L%d\n",
+           t->id, t->first.u.offset);
+		}
+}
+
+void assign_follow(struct tree *t)
+{
+    if (!t) return;
+
+    switch(t->prodrule) {
+
+        case 1: // statements → statements statement
+            if (t->kids[0] && t->kids[1]) {
+                t->kids[0]->follow = t->kids[1]->first;
+                t->kids[1]->follow = t->follow;
+            }
+            break;
+
+        case 10: // while
+			{
+    			struct tree *cond = NULL;
+    			struct tree *body = NULL;
+
+    			if (t->nkids == 5) {
+        			cond = t->kids[2];
+        			body = t->kids[4];
+    			} else if (t->nkids == 3) {
+        			cond = t->kids[1];
+        			body = t->kids[2];
+    			}
+        		
+        		struct addr empty = { .region = R_NONE };
+        		
+        		if (cond) {
+
+					cond->onTrue = body ? body->first : empty;
+        			cond->onFalse = t->follow;
+    				}
+
+    			if (body)
+        		body->follow = t->first;
+
+    			break;
+			}
+	}
+
+    for (int i = 0; i < t->nkids; i++)
+        assign_follow(t->kids[i]);
+        
+    if (t->prodrule == 10 &&
+    t->first.region != R_NONE &&
+    t->follow.region != R_NONE) {
+    	printf("WHILE node %d: first=L%d follow=L%d\n",
+           	t->id,
+           	t->first.u.offset,
+           	t->follow.u.offset);
+	}
+}
+
+void assign_bool(struct tree *t)
+{
+    if (!t) return;
+
+    switch (t->prodrule) {
+
+        case 16: // <
+        case 17: // >
+        case 18: // ==
+        case 19: // !=
+
+            if (t->kids[0]) {
+                t->kids[0]->onTrue = t->onTrue;
+                t->kids[0]->onFalse = t->onFalse;
+            }
+
+            if (t->kids[2]) {
+                t->kids[2]->onTrue = t->onTrue;
+                t->kids[2]->onFalse = t->onFalse;
+            }
+
+            break;
+    }
+
+    for (int i = 0; i < t->nkids; i++)
+        assign_bool(t->kids[i]);
 }
