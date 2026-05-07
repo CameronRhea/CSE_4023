@@ -11,6 +11,10 @@ int serial = 0;
 SymbolTable globalTable = NULL;
 SymbolTableEntry currentFunction = NULL;
 int semantic_error = 0;
+int local_offset = 0;
+int temp_offset = 10000;
+
+typeptr getType(struct tree *t);
 
 SymbolTableEntry lookupSymbol(SymbolTable st, char *name)
 {
@@ -128,28 +132,87 @@ void treeprint(struct tree *t, int depth)
     }
 }
 
-void print_graph2(struct tree *t, FILE *f) {
+static void print_typeinfo(FILE *f, struct tree *t)
+{
+    typeptr ty = getType(t);
 
+    // don't print unknown types
+    if (!ty)
+        return;
+
+    fprintf(f, "\\nType: %s", typename(ty));
+
+    // non-atomic types
+    if (ty->basetype == FUNC_TYPE) {
+
+        fprintf(f,
+            "\\n(struct typeinfo)"
+            "\\nparams=%d",
+            ty->u.f.nparams);
+    }
+
+    else if (ty->basetype == ARRAY_TYPE) {
+
+        fprintf(f,
+            "\\n(struct typeinfo)"
+            "\\nsize=%d",
+            ty->u.a.size);
+
+        if (ty->u.a.elemtype) {
+            fprintf(f,
+                "\\nelem=%s",
+                typename(ty->u.a.elemtype));
+        }
+    }
+}
+
+void print_graph2(struct tree *t, FILE *f)
+{
     if (!t) return;
 
+    // =========================
+    // LEAF NODE
+    // =========================
     if (t->leaf) {
-        fprintf(f,"N%d [shape=box label=\"%s\"];\n",
-                t->id,
-                t->leaf->text);
+
+        fprintf(f,
+            "N%d [shape=box label=\"%s",
+            t->id,
+            t->leaf->text);
+
+        print_typeinfo(f, t);
+
+        fprintf(f, "\"];\n");
+
         return;
     }
 
-    fprintf(f,"N%d [label=\"%s\"];\n",
-            t->id,
-            humanreadable(t));
+    // =========================
+    // INTERNAL NODE
+    // =========================
+    fprintf(f,
+        "N%d [label=\"%s",
+        t->id,
+        humanreadable(t));
 
+    print_typeinfo(f, t);
+
+    fprintf(f, "\"];\n");
+
+    // =========================
+    // EDGES
+    // =========================
     for (int i = 0; i < t->nkids; i++) {
 
         if (t->kids[i]) {
-            fprintf(f,"N%d -> N%d;\n", t->id, t->kids[i]->id);
+
+            fprintf(f,
+                "N%d -> N%d;\n",
+                t->id,
+                t->kids[i]->id);
+
             print_graph2(t->kids[i], f);
         }
-
     }
 }
 
@@ -327,7 +390,7 @@ void buildSymtab(struct tree *t)
     if (!t) return;
 
     // =========================
-    // VAR DECL
+    // VAR DECL (RULE 5)
     // =========================
     if (t->prodrule == 5) {
 
@@ -352,14 +415,20 @@ void buildSymtab(struct tree *t)
             insert(globalTable, name, varType);
 
             SymbolTableEntry e = lookupEntry(globalTable, name);
-            e->mutable = 1;
-            e->nullable = isNullable;
+            if (e) {
+                e->offset = local_offset;
+                e->mutable = 1;
+                e->nullable = isNullable;
+            }
+
+            local_offset += 8;
         }
     }
 
     // =========================
-    // ASSIGNMENT
+    // ASSIGNMENT (RULE 6 handled structurally, but symbol table doesn't care)
     // =========================
+
     else if (t->prodrule == 6) {
 
         char *name = t->kids[0]->leaf->text;
@@ -391,11 +460,12 @@ void buildSymtab(struct tree *t)
     }
 
     // =========================
-    // FUNCTION DECL
+    // FUNCTION DECL (RULE 7)
     // =========================
     else if (t->prodrule == 7) {
 
         char *fname = t->kids[1]->leaf->text;
+        local_offset = 0;
 
         if (lookup(globalTable, fname)) {
             semantic_error = 1;
@@ -404,88 +474,50 @@ void buildSymtab(struct tree *t)
         }
 
         SymbolTableEntry f = malloc(sizeof(*f));
-
         f->s = strdup(fname);
         f->type = alctype(FUNC_TYPE);
         f->mutable = 0;
         f->nullable = 0;
-        f->next = globalTable->next;
-
         f->params = NULL;
         f->returnType = integer_typeptr;
-
-        currentFunction = f;
-
-        // =========================
-        // PARAMETERS
-        // =========================
-        struct tree *p = t->kids[3];
-
-        struct param *head = NULL;
-        struct param *tail = NULL;
-
-        if (p && p->prodrule == 8) {
-
-            struct tree *curr = p;
-
-            while (curr) {
-
-                struct param *np = malloc(sizeof(struct param));
-
-                if (curr->nkids == 3) {
-                    np->name = strdup(curr->kids[2]->leaf->text);
-                    curr = curr->kids[0];
-                } else {
-                    np->name = strdup(curr->kids[0]->leaf->text);
-                    curr = NULL;
-                }
-
-                np->type = integer_typeptr;
-                np->next = NULL;
-
-                if (!head) head = tail = np;
-                else {
-                    tail->next = np;
-                    tail = np;
-                }
-            }
-        }
-
-        f->params = head;
 
         insert(globalTable, fname, f->type);
 
         SymbolTableEntry e = lookupEntry(globalTable, fname);
-        e->params = head;
-        e->returnType = f->returnType;
+        if (e) {
+            e->params = f->params;
+            e->returnType = f->returnType;
+        }
+
+        currentFunction = f;
     }
 
     // =========================
-    // RETURN STATEMENT (FIXED)
+    // RETURN (RULE 4)
     // =========================
     else if (t->prodrule == 4) {
 
-    if (!currentFunction) return;
+        if (!currentFunction) return;
 
-    typeptr retType = getType(t->kids[1]);
+        typeptr retType = getType(t->kids[1]);
 
-    if (retType == null_typeptr) {
-        semantic_error = 1;
-        fprintf(stderr,
-            "Null returned from function %s\n",
-            currentFunction->s);
+        if (retType == null_typeptr) {
+            semantic_error = 1;
+            fprintf(stderr,
+                "Null returned from function %s\n",
+                currentFunction->s);
+        }
+
+        if (retType &&
+            currentFunction->returnType &&
+            retType != currentFunction->returnType) {
+
+            semantic_error = 1;
+            fprintf(stderr,
+                "Return type mismatch in %s\n",
+                currentFunction->s);
+        }
     }
-
-    if (retType &&
-        currentFunction->returnType &&
-        retType != currentFunction->returnType) {
-
-        semantic_error = 1;
-        fprintf(stderr,
-            "Return type mismatch in %s\n",
-            currentFunction->s);
-    }
-}
 
     // =========================
     // RECURSION
@@ -495,13 +527,14 @@ void buildSymtab(struct tree *t)
     }
 }
 
+
 int labelCounter = 0;
 
-struct addr genlabel()
-{
+struct addr newtemp() {
     struct addr a;
-    a.region = R_LABEL;
-    a.u.offset = labelCounter++;
+    a.region = R_LOCAL;
+    a.u.offset = temp_offset;
+    temp_offset += 8;
     return a;
 }
 
@@ -608,4 +641,238 @@ void assign_bool(struct tree *t)
 
     for (int i = 0; i < t->nkids; i++)
         assign_bool(t->kids[i]);
+}
+
+void gen_code(struct tree *t)
+{
+    if (!t) return;
+    if (semantic_error) return;
+
+    for (int i = 0; i < t->nkids; i++)
+        gen_code(t->kids[i]);
+
+    // =========================
+    // LEAF NODES
+    // =========================
+    if (t->leaf) {
+
+        if (t->leaf->category == INTEGERLITERAL) {
+            t->place.region = R_CONST;
+            t->place.u.offset = t->leaf->ival;
+        }
+
+        else if (t->leaf->category == IDENTIFIER) {
+            SymbolTableEntry e =
+                lookupEntry(globalTable, t->leaf->text);
+
+            if (!e) {
+                fprintf(stderr, "Undefined variable %s\n", t->leaf->text);
+                exit(3);
+            }
+
+            t->place.region = R_LOCAL;
+            t->place.u.offset = e->offset;
+        }
+
+        t->code = NULL;
+        return;
+    }
+
+    t->code = NULL;
+
+    // =========================
+    // VAR DECL (RULE 5)
+    // =========================
+    if (t->prodrule == 5) {
+
+        char *name = t->kids[1]->leaf->text;
+        SymbolTableEntry e = lookupEntry(globalTable, name);
+
+        struct addr lhs;
+        lhs.region = R_LOCAL;
+        lhs.u.offset = e->offset;
+
+        struct addr rhs;
+
+        if (t->nkids == 4 && t->kids[3]) {
+            rhs = t->kids[3]->place;
+        } else {
+            rhs.region = R_CONST;
+            rhs.u.offset = 0;
+        }
+
+        struct instr *i = gen(
+            O_ASN,
+            lhs,
+            rhs,
+            (struct addr){R_NONE}
+        );
+
+        t->code = append(
+            (t->nkids == 4 ? t->kids[3]->code : NULL),
+            i
+        );
+    }
+
+    // =========================
+    // ASSIGNMENT (RULE 6)
+    // =========================
+    else if (t->prodrule == 6) {
+
+        SymbolTableEntry e =
+            lookupEntry(globalTable, t->kids[0]->leaf->text);
+
+        struct addr lhs;
+        lhs.region = R_LOCAL;
+        lhs.u.offset = e->offset;
+
+        struct instr *i = gen(
+            O_ASN,
+            lhs,
+            t->kids[2]->place,
+            (struct addr){R_NONE}
+        );
+
+        t->code = append(
+            t->kids[0]->code,
+            append(t->kids[2]->code, i)
+        );
+    }
+
+    // =========================
+    // ARITHMETIC
+    // =========================
+    else if (t->prodrule == 12 ||
+             t->prodrule == 13 ||
+             t->prodrule == 14 ||
+             t->prodrule == 15) {
+
+        int op =
+            (t->prodrule == 12) ? O_ADD :
+            (t->prodrule == 13) ? O_SUB :
+            (t->prodrule == 14) ? O_MUL :
+                                  O_DIV;
+
+        t->place = newtemp();
+
+        struct instr *i = gen(
+            op,
+            t->place,
+            t->kids[0]->place,
+            t->kids[2]->place
+        );
+
+        t->code = append(
+            append(t->kids[0]->code, t->kids[2]->code),
+            i
+        );
+    }
+
+    // =========================
+    // RETURN
+    // =========================
+    else if (t->prodrule == 4) {
+
+        struct instr *i = gen(
+            O_RET,
+            t->kids[1]->place,
+            (struct addr){R_NONE},
+            (struct addr){R_NONE}
+        );
+
+        t->code = append(t->kids[1]->code, i);
+    }
+
+    // =========================
+    // RELATIONAL
+    // =========================
+    else if (t->prodrule >= 16 && t->prodrule <= 19) {
+
+        int op =
+            (t->prodrule == 16) ? O_BLT :
+            (t->prodrule == 17) ? O_BGT :
+            (t->prodrule == 18) ? O_BEQ :
+                                  O_BNE;
+
+        t->place = newtemp();
+
+        struct instr *i = gen(
+            op,
+            t->place,
+            t->kids[0]->place,
+            t->kids[2]->place
+        );
+
+        t->code = append(
+            append(t->kids[0]->code, t->kids[2]->code),
+            i
+        );
+    }
+
+    // =========================
+    // FUNCTION CALL
+    // =========================
+    else if (t->prodrule == 11) {
+
+        struct instr *code = NULL;
+
+        struct tree *arg = (t->nkids > 2) ? t->kids[2] : NULL;
+
+        struct tree *args[100];
+        int n = 0;
+
+        while (arg) {
+            if (arg->prodrule == 20) {
+                args[n++] = arg->kids[2];
+                arg = arg->kids[0];
+            } else {
+                args[n++] = arg;
+                break;
+            }
+        }
+
+        for (int i = n - 1; i >= 0; i--) {
+
+            if (args[i]->code)
+                code = append(code, args[i]->code);
+
+            struct instr *p = gen(
+                O_PARM,
+                args[i]->place,
+                (struct addr){R_NONE},
+                (struct addr){R_NONE}
+            );
+
+            code = append(code, p);
+        }
+
+        t->place = newtemp();
+
+        struct addr fname;
+        fname.region = R_NAME;
+        fname.u.name = t->kids[0]->leaf->text;
+
+        struct instr *call = gen(
+            O_CALL,
+            fname,
+            (struct addr){R_CONST, .u.offset = n},
+            t->place
+        );
+
+        t->code = append(code, call);
+    }
+
+    // =========================
+    // DEFAULT GLUE
+    // =========================
+    else {
+        struct instr *c = NULL;
+
+        for (int i = 0; i < t->nkids; i++) {
+            if (t->kids[i] && t->kids[i]->code)
+                c = append(c, t->kids[i]->code);
+        }
+
+        t->code = c;
+    }
 }

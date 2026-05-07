@@ -1,32 +1,32 @@
-/*
- * Three Address Code - skeleton for CSE 423
- */
 #ifndef TAC_H
 #define TAC_H
+
+#include <stdio.h>   // REQUIRED for FILE *
 
 struct addr {
   int region;
   union {
-  int offset;
-  char *name;
+    int offset;
+    char *name;
   } u;
 };
 
-/* Regions: */
-#define R_GLOBAL 2001 /* can assemble as relative to the pc */
-#define R_LOCAL  2002 /* can assemble as relative to the ebp */
-#define R_CLASS  2003 /* can assemble as relative to the 'this' register */
-#define R_LABEL  2004 /* pseudo-region for labels in the code region */
-#define R_CONST  2005 /* pseudo-region for immediate mode constants */
-#define R_NAME   2006 /* pseudo-region for source names */
-#define R_NONE   2007 /* pseudo-region for unused addresses */
+/* Regions */
+#define R_GLOBAL 2001
+#define R_LOCAL  2002
+#define R_CLASS  2003
+#define R_LABEL  2004
+#define R_CONST  2005
+#define R_NAME   2006
+#define R_NONE   2007
 
 struct instr {
    int opcode;
    struct addr dest, src1, src2;
    struct instr *next;
 };
-/* Opcodes, per lecture notes */
+
+/* Opcodes */
 #define O_ADD   3001
 #define O_SUB   3002
 #define O_MUL   3003
@@ -48,21 +48,25 @@ struct instr {
 #define O_PARM  3019
 #define O_CALL  3020
 #define O_RET   3021
-/* declarations/pseudo instructions */
+
+/* pseudo instructions */
 #define D_GLOB  3051
 #define D_PROC  3052
 #define D_LOCAL 3053
 #define D_LABEL 3054
 #define D_END   3055
-#define D_PROT  3056 /* prototype "declaration" */
+#define D_PROT  3056
 
 struct instr *gen(int, struct addr, struct addr, struct addr);
 struct instr *concat(struct instr *, struct instr *);
 struct instr *append(struct instr *, struct instr *);
+
 char *regionname(int i);
 char *opcodename(int i);
 char *pseudoname(int i);
+
 struct addr genlabel(void);
-void tacprint(struct instr *head);
+
+void tacprint(struct instr *head, FILE *out);
 
 #endif

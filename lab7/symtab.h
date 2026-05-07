@@ -11,6 +11,8 @@ typedef struct sym_entry {
 
    struct param *params;
    typeptr returnType;
+   
+   int offset;
 
    struct sym_entry *next;
 } *SymbolTableEntry;
